@@ -15,15 +15,15 @@ Expected outcome:
 
 Tasks:
 
-- [ ] Initialize the Electron, TypeScript, and React application structure
-- [ ] Configure `electron-vite` for main, preload, and renderer builds
-- [ ] Configure Electron Forge for local packaging workflows
-- [ ] Establish secure Electron defaults with `contextIsolation`, `sandbox`, and disabled `nodeIntegration`
-- [ ] Create the base repository structure for `main`, `preload`, `renderer`, and `shared` modules
-- [ ] Add TypeScript configuration for shared typing across processes
-- [ ] Set up linting, formatting, and test command scaffolding
-- [ ] Create the initial typed IPC contract shape for main-to-renderer communication
-- [ ] Align the codebase structure with `ARCHITECTURE.md` and `CONTEXT.md`
+- [x] Initialize the Electron, TypeScript, and React application structure
+- [x] Configure `electron-vite` for main, preload, and renderer builds
+- [x] Configure Electron Forge for local packaging workflows
+- [x] Establish secure Electron defaults with `contextIsolation`, `sandbox`, and disabled `nodeIntegration`
+- [x] Create the base repository structure for `main`, `preload`, `renderer`, and `shared` modules
+- [x] Add TypeScript configuration for shared typing across processes
+- [x] Set up linting, formatting, and test command scaffolding
+- [x] Create the initial typed IPC contract shape for main-to-renderer communication
+- [x] Align the codebase structure with `ARCHITECTURE.md` and `CONTEXT.md`
 
 ## Milestone 2: Core Break Loop Engine
 
