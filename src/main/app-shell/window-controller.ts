@@ -53,6 +53,14 @@ export function createWindowController(): WindowController {
   let overlayWindow: BrowserWindow | null = null
   let isQuitting = false
 
+  const getLiveWindow = (window: BrowserWindow | null): BrowserWindow | null => {
+    if (!window || window.isDestroyed()) {
+      return null
+    }
+
+    return window
+  }
+
   const hideOnClose = (window: BrowserWindow): void => {
     window.on('close', (event) => {
       if (isQuitting) {
@@ -66,8 +74,10 @@ export function createWindowController(): WindowController {
 
   return {
     getSettingsWindow() {
-      if (settingsWindow && !settingsWindow.isDestroyed()) {
-        return settingsWindow
+      const liveWindow = getLiveWindow(settingsWindow)
+
+      if (liveWindow) {
+        return liveWindow
       }
 
       settingsWindow = createSettingsWindow()
@@ -79,8 +89,10 @@ export function createWindowController(): WindowController {
       return settingsWindow
     },
     getOverlayWindow() {
-      if (overlayWindow && !overlayWindow.isDestroyed()) {
-        return overlayWindow
+      const liveWindow = getLiveWindow(overlayWindow)
+
+      if (liveWindow) {
+        return liveWindow
       }
 
       overlayWindow = createOverlayWindow()
@@ -112,21 +124,25 @@ export function createWindowController(): WindowController {
       window.moveTop()
     },
     hideOverlayWindow() {
-      const window = this.getOverlayWindow()
+      const window = getLiveWindow(overlayWindow)
 
-      if (window.isVisible()) {
+      if (window && window.isVisible()) {
         window.hide()
       }
     },
     dispose() {
       isQuitting = true
 
-      if (settingsWindow && !settingsWindow.isDestroyed()) {
-        settingsWindow.destroy()
+      const liveSettingsWindow = getLiveWindow(settingsWindow)
+
+      if (liveSettingsWindow) {
+        liveSettingsWindow.destroy()
       }
 
-      if (overlayWindow && !overlayWindow.isDestroyed()) {
-        overlayWindow.destroy()
+      const liveOverlayWindow = getLiveWindow(overlayWindow)
+
+      if (liveOverlayWindow) {
+        liveOverlayWindow.destroy()
       }
 
       settingsWindow = null

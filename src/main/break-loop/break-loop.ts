@@ -68,30 +68,41 @@ export function createBreakLoopState(options: CreateBreakLoopStateOptions = {}):
 }
 
 export function reduceBreakLoop(state: BreakLoopState, event: BreakLoopEvent): BreakLoopState {
-  let next = advanceBreakLoop(state, event.now)
-
   switch (event.type) {
     case 'tick':
-      return reconcileBreakLoopState(next)
+      return reconcileBreakLoopState(advanceBreakLoop(state, event.now))
     case 'presence-changed':
-      next = {
-        ...next,
-        presence: event.presence,
-        inactiveSince: resolveInactiveSince(next.inactiveSince, event.now, event.presence),
-      }
-      return reconcileBreakLoopState(next)
+      return reducePresenceChange(state, event.now, event.presence)
     case 'suppression-changed':
       return reconcileBreakLoopState({
-        ...next,
+        ...advanceBreakLoop(state, event.now),
         isSuppressed: event.isSuppressed,
       })
     case 'settings-changed':
-      next = applySettingsChange(next, event.now, event.settings)
-      return reconcileBreakLoopState(next)
+      return reconcileBreakLoopState(applySettingsChange(advanceBreakLoop(state, event.now), event.now, event.settings))
     case 'break-action':
-      next = applyBreakAction(next, event.now, event.action)
-      return reconcileBreakLoopState(next)
+      return reconcileBreakLoopState(applyBreakAction(advanceBreakLoop(state, event.now), event.now, event.action))
   }
+}
+
+function reducePresenceChange(state: BreakLoopState, now: number, presence: PresenceState): BreakLoopState {
+  const transitionAt = resolvePresenceTransitionAt(state, now, presence)
+  const advancedState = advanceBreakLoop(state, transitionAt)
+  const appliedPresence = reconcileBreakLoopState({
+    ...advancedState,
+    presence,
+    inactiveSince: resolveInactiveSince(advancedState.inactiveSince, now, presence),
+  })
+
+  return reconcileBreakLoopState(advanceBreakLoop(appliedPresence, now))
+}
+
+function resolvePresenceTransitionAt(state: BreakLoopState, now: number, presence: PresenceState): number {
+  if (isPresenceActive(presence) || presence.idleMs <= 0) {
+    return now
+  }
+
+  return Math.min(Math.max(now - presence.idleMs, state.updatedAt), now)
 }
 
 export function toBreakLoopSnapshot(state: BreakLoopState, now = state.updatedAt): BreakLoopSnapshot {
@@ -125,7 +136,10 @@ export function toBreakLoopSnapshot(state: BreakLoopState, now = state.updatedAt
 export function createBreakLoopController(options: CreateBreakLoopControllerOptions = {}): BreakLoopController {
   const clock = options.clock ?? Date.now
   const tickMs = options.tickMs ?? 1000
-  let state = createBreakLoopState(options)
+  let state = createBreakLoopState({
+    ...options,
+    now: options.now ?? clock(),
+  })
   const listeners = new Set<(snapshot: BreakLoopSnapshot) => void>()
 
   const emit = (): BreakLoopSnapshot => {
@@ -160,7 +174,7 @@ export function createBreakLoopController(options: CreateBreakLoopControllerOpti
       return dispatch({ type: 'break-action', now: clock(), action })
     },
     updateEnvironment(update) {
-      let snapshot = this.getSnapshot()
+      let snapshot: BreakLoopSnapshot | null = null
 
       if (update.presence) {
         snapshot = dispatch({
@@ -178,7 +192,7 @@ export function createBreakLoopController(options: CreateBreakLoopControllerOpti
         })
       }
 
-      return snapshot
+      return snapshot ?? this.getSnapshot()
     },
     updateSettings(update) {
       return dispatch({ type: 'settings-changed', now: clock(), settings: update })

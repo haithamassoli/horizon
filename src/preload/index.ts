@@ -47,4 +47,4 @@ const horizonApi: HorizonApi = {
   },
 }
 
-contextBridge.exposeInMainWorld('horizon', horizonApi)
+contextBridge.exposeInMainWorld('horizon', Object.freeze(horizonApi))

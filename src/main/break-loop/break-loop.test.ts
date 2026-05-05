@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createDefaultBreakLoopSettings } from '@shared/contracts/break'
-import { createBreakLoopState, reduceBreakLoop, toBreakLoopSnapshot } from './break-loop'
+import { createBreakLoopController, createBreakLoopState, reduceBreakLoop, toBreakLoopSnapshot } from './break-loop'
 
 describe('Break Loop', () => {
   it('accumulates active time until break becomes due', () => {
@@ -100,6 +100,46 @@ describe('Break Loop', () => {
 
     state = reduceBreakLoop(state, { type: 'suppression-changed', now: 20 * 60 * 1000, isSuppressed: false })
     expect(toBreakLoopSnapshot(state).status).toBe('due')
+  })
+
+  it('cuts active accumulation at delayed idle boundary instead of detection time', () => {
+    let now = 0
+    const breakLoop = createBreakLoopController({ clock: () => now, tickMs: 60_000 })
+
+    now = 5 * 60 * 1000
+    breakLoop.getSnapshot()
+
+    now = 7 * 60 * 1000
+    breakLoop.updateEnvironment({
+      presence: { kind: 'idle', idleMs: 60 * 1000 },
+    })
+
+    const snapshot = breakLoop.getSnapshot()
+    expect(snapshot.status).toBe('paused')
+    expect(snapshot.activeElapsedMs).toBe(6 * 60 * 1000)
+
+    breakLoop.dispose()
+  })
+
+  it('auto-credits long idle detected after break became nearly due', () => {
+    let now = 0
+    const breakLoop = createBreakLoopController({ clock: () => now, tickMs: 60_000 })
+
+    now = 19 * 60 * 1000 + 50 * 1000
+    breakLoop.getSnapshot()
+
+    now = 20 * 60 * 1000 + 10 * 1000
+    breakLoop.updateEnvironment({
+      presence: { kind: 'idle', idleMs: 20 * 1000 },
+    })
+
+    const snapshot = breakLoop.getSnapshot()
+    expect(snapshot.status).toBe('paused')
+    expect(snapshot.completedBreaks).toBe(1)
+    expect(snapshot.lastOutcome).toBe('auto-credited')
+    expect(snapshot.activeElapsedMs).toBe(0)
+
+    breakLoop.dispose()
   })
 
   it('completes break countdown and starts fresh cycle', () => {

@@ -137,12 +137,12 @@ Expected outcome:
 
 Tasks:
 
-- [ ] Audit idle-credit heuristics against realistic user flows
-- [ ] Harden wake, sleep, and lock recovery behavior in the Break Loop
+- [x] Audit idle-credit heuristics against realistic user flows
+- [x] Harden wake, sleep, and lock recovery behavior in the Break Loop
 - [ ] Harden fullscreen and presentation suppression edge cases
-- [ ] Review tray, settings window, and overlay window lifecycle behavior for race conditions
-- [ ] Validate all IPC inputs and standardize result-style error handling
-- [ ] Review preload exposure to ensure no raw Electron primitives leak to renderers
+- [x] Review tray, settings window, and overlay window lifecycle behavior for race conditions
+- [x] Validate all IPC inputs and standardize result-style error handling
+- [x] Review preload exposure to ensure no raw Electron primitives leak to renderers
 - [ ] Measure startup time, memory usage, and idle resource consumption
 - [ ] Fix performance bottlenecks that would harm always-on desktop usage
 - [ ] Add automated end-to-end coverage for critical daily flows
