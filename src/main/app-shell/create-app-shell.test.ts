@@ -7,18 +7,38 @@ import { createAppShell } from './create-app-shell'
 const overlayWindow = {
   hide: vi.fn(),
   isVisible: vi.fn(() => false),
+  moveTop: vi.fn(),
   showInactive: vi.fn(),
 }
 
+const trayController = {
+  dispose: vi.fn(),
+  update: vi.fn(),
+}
+
 vi.mock('../ipc/register-app-ipc', () => ({
-  registerAppIpc: vi.fn(),
+  registerAppIpc: vi.fn(() => vi.fn()),
+}))
+
+vi.mock('./login-item', () => ({
+  createLoginItemController: () => ({
+    getState: () => false,
+    setEnabled: (enabled: boolean) => enabled,
+  }),
+}))
+
+vi.mock('./tray-controller', () => ({
+  createTrayController: () => trayController,
 }))
 
 vi.mock('./window-controller', () => ({
   createWindowController: () => ({
     getOverlayWindow: () => overlayWindow,
     getSettingsWindow: vi.fn(),
+    hideOverlayWindow: vi.fn(() => overlayWindow.hide()),
+    showOverlayWindow: vi.fn(() => overlayWindow.showInactive()),
     showSettingsWindow: vi.fn(),
+    dispose: vi.fn(),
   }),
 }))
 
@@ -26,7 +46,10 @@ describe('createAppShell', () => {
   afterEach(() => {
     overlayWindow.hide.mockClear()
     overlayWindow.isVisible.mockClear()
+    overlayWindow.moveTop.mockClear()
     overlayWindow.showInactive.mockClear()
+    trayController.dispose.mockClear()
+    trayController.update.mockClear()
   })
 
   it('moves Break Loop from paused to running when Presence returns active', () => {

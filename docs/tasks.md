@@ -88,17 +88,17 @@ Expected outcome:
 
 Tasks:
 
-- [ ] Implement the App Shell composition module in the main process
-- [ ] Create tray or menubar initialization and lifecycle management
-- [ ] Show current Horizon status and next break timing in the tray or menubar UI
-- [ ] Create the settings window shell and window lifecycle logic
-- [ ] Create the Break Overlay window shell and window lifecycle logic
-- [ ] Implement typed IPC handlers for settings reads and updates
-- [ ] Implement typed IPC handlers for Break Loop state and break actions
-- [ ] Build the settings renderer with controls for interval, duration, snooze, reminders, and launch at login
-- [ ] Build the Break Overlay renderer with countdown and actions for start now, snooze, skip, and dismiss
-- [ ] Ensure renderer windows remain UI-only and do not contain privileged logic
-- [ ] Validate that tray actions, overlay actions, and settings changes stay synchronized with main-process state
+- [x] Implement the App Shell composition module in the main process
+- [x] Create tray or menubar initialization and lifecycle management
+- [x] Show current Horizon status and next break timing in the tray or menubar UI
+- [x] Create the settings window shell and window lifecycle logic
+- [x] Create the Break Overlay window shell and window lifecycle logic
+- [x] Implement typed IPC handlers for settings reads and updates
+- [x] Implement typed IPC handlers for Break Loop state and break actions
+- [x] Build the settings renderer with controls for interval, duration, snooze, reminders, and launch at login
+- [x] Build the Break Overlay renderer with countdown and actions for start now, snooze, skip, and dismiss
+- [x] Ensure renderer windows remain UI-only and do not contain privileged logic
+- [x] Validate that tray actions, overlay actions, and settings changes stay synchronized with main-process state
 
 ## Milestone 5: Persistence, Stats, and Daily Usability
 

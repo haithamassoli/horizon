@@ -20,6 +20,7 @@ export function createOverlayWindow(): BrowserWindow {
     show: false,
     frame: false,
     transparent: true,
+    skipTaskbar: true,
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -37,6 +38,11 @@ export function createOverlayWindow(): BrowserWindow {
   overlayWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  overlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  overlayWindow.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
   })
 
   loadRendererEntry(overlayWindow, 'overlay.html')

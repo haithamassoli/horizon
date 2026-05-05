@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useState } from 'react'
+import { startTransition, useEffect, useEffectEvent, useState } from 'react'
 import { AppShell, BreakOrbit, Button, Kicker, MetricCard, Panel, StatusBanner } from '@renderer/shared/ui'
 import type { BreakActionType, BreakLoopSnapshot } from '@shared/contracts/break'
 import type { Result } from '@shared/contracts/result'
@@ -8,21 +8,17 @@ export default function OverlayApp() {
   const [breakState, setBreakState] = useState<BreakLoopSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const applyBreakState = (snapshot: BreakLoopSnapshot): void => {
+  const commitBreakState = (snapshot: BreakLoopSnapshot): void => {
     startTransition(() => {
       setBreakState(snapshot)
     })
+
+    setError(null)
   }
 
-  const handleStateResult = (result: Result<BreakLoopSnapshot>): void => {
-    if (result.success) {
-      setError(null)
-      applyBreakState(result.data)
-      return
-    }
-
-    setError(result.error)
-  }
+  const applyBreakState = useEffectEvent((snapshot: BreakLoopSnapshot): void => {
+    commitBreakState(snapshot)
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -34,13 +30,7 @@ export default function OverlayApp() {
         return
       }
 
-      if (result.success) {
-        setError(null)
-        applyBreakState(result.data)
-        return
-      }
-
-      setError(result.error)
+      handleStateResult(result, commitBreakState, setError)
     }
 
     void loadState()
@@ -59,15 +49,15 @@ export default function OverlayApp() {
 
   async function runBreakAction(action: BreakActionType): Promise<void> {
     const result = await window.horizon.performBreakAction(action)
-    handleStateResult(result)
+    handleStateResult(result, commitBreakState, setError)
   }
 
   const countdown = breakState?.status === 'on-break' ? breakState.breakRemainingMs : breakState?.settings.breakDurationMs ?? 20000
   const heading = breakState?.status === 'on-break' ? 'Look 20 feet away.' : 'Break is due.'
   const body =
     breakState?.status === 'on-break'
-      ? 'Recovery countdown is live. Complete when you are ready and Horizon will reset the cycle in main process.'
-      : 'Active-time interval is complete. Start now, snooze briefly, or skip and let the next cycle recover cleanly.'
+      ? 'Countdown is live from main process. Dismiss when you are ready and cycle will complete cleanly.'
+      : 'Tray, overlay, and settings now point at same due state. Start now, snooze briefly, or skip this cycle.'
 
   return (
     <AppShell className="flex items-center justify-center px-4 py-6">
@@ -95,7 +85,7 @@ export default function OverlayApp() {
           <div className="grid gap-3">
             {breakState?.status === 'on-break' ? (
               <Button className="w-full" onClick={() => void runBreakAction('complete')}>
-                Complete break
+                Dismiss
               </Button>
             ) : (
               <Button className="w-full" onClick={() => void runBreakAction('start-now')}>
@@ -103,21 +93,23 @@ export default function OverlayApp() {
               </Button>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
-              <Button className="w-full" onClick={() => void runBreakAction('snooze')} tone="secondary">
-                Snooze
-              </Button>
-              <Button className="w-full" onClick={() => void runBreakAction('skip')} tone="secondary">
-                Skip
-              </Button>
-            </div>
+            {breakState?.status === 'on-break' ? null : (
+              <div className="grid grid-cols-2 gap-3">
+                <Button className="w-full" onClick={() => void runBreakAction('snooze')} tone="secondary">
+                  Snooze
+                </Button>
+                <Button className="w-full" onClick={() => void runBreakAction('skip')} tone="secondary">
+                  Skip
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <MetricCard
               align="center"
               label="Progress"
-              note="Active cadence finished before overlay opened."
+              note="Same cycle state seen in tray and settings."
               value={breakState ? `${Math.round(breakState.activeProgress * 100)}%` : '...'}
             />
             <MetricCard
@@ -131,6 +123,19 @@ export default function OverlayApp() {
       </Panel>
     </AppShell>
   )
+}
+
+function handleStateResult(
+  result: Result<BreakLoopSnapshot>,
+  applySnapshot: (snapshot: BreakLoopSnapshot) => void,
+  setError: (error: string | null) => void,
+): void {
+  if (result.success) {
+    applySnapshot(result.data)
+    return
+  }
+
+  setError(result.error)
 }
 
 function formatClock(ms: number): string {

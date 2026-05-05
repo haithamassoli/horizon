@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app } from 'electron'
 import { createAppShell } from './app-shell/create-app-shell'
 
 let appShell: ReturnType<typeof createAppShell> | null = null
@@ -20,20 +20,15 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     appShell = createAppShell()
-    showPrimaryWindow()
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        showPrimaryWindow()
-      }
+      showPrimaryWindow()
     })
   })
 }
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  // Tray-first shell stays resident even when windows are hidden.
 })
 
 app.on('before-quit', () => {

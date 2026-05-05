@@ -4,17 +4,23 @@ import type {
   BreakActionType,
   BreakEnvironmentUpdate,
   BreakLoopSnapshot,
-  BreakSettingsUpdate,
   PresenceKind,
   PresenceState,
 } from '@shared/contracts/break'
 import type { Result } from '@shared/contracts/result'
+import type { HorizonSettingsSnapshot, HorizonSettingsUpdate } from '@shared/contracts/settings'
 import type { BreakLoopController } from '../break-loop/break-loop'
+import type { SettingsController } from '../preferences/settings-controller'
 
 const breakActions = new Set<BreakActionType>(['start-now', 'snooze', 'skip', 'complete', 'reset'])
 const presenceKinds = new Set<PresenceKind>(['active', 'idle', 'locked', 'sleeping'])
 
-export function registerAppIpc(breakLoop: BreakLoopController): void {
+export interface RegisterAppIpcOptions {
+  breakLoop: BreakLoopController
+  settings: SettingsController
+}
+
+export function registerAppIpc(options: RegisterAppIpcOptions): () => void {
   ipcMain.handle('app:get-runtime-info', async (): Promise<Result<RuntimeInfo>> => {
     return {
       success: true,
@@ -32,11 +38,18 @@ export function registerAppIpc(breakLoop: BreakLoopController): void {
   ipcMain.handle('break:get-state', async (): Promise<Result<BreakLoopSnapshot>> => {
     return {
       success: true,
-      data: breakLoop.getSnapshot(),
+      data: options.breakLoop.getSnapshot(),
     }
   })
 
-  ipcMain.handle('break:update-settings', async (_event, update: BreakSettingsUpdate): Promise<Result<BreakLoopSnapshot>> => {
+  ipcMain.handle('settings:get', async (): Promise<Result<HorizonSettingsSnapshot>> => {
+    return {
+      success: true,
+      data: options.settings.getSnapshot(),
+    }
+  })
+
+  ipcMain.handle('settings:update', async (_event, update: HorizonSettingsUpdate): Promise<Result<HorizonSettingsSnapshot>> => {
     const error = validateSettingsUpdate(update)
 
     if (error) {
@@ -45,7 +58,7 @@ export function registerAppIpc(breakLoop: BreakLoopController): void {
 
     return {
       success: true,
-      data: breakLoop.updateSettings(update),
+      data: options.settings.update(update),
     }
   })
 
@@ -59,7 +72,7 @@ export function registerAppIpc(breakLoop: BreakLoopController): void {
 
     return {
       success: true,
-      data: breakLoop.performAction(action),
+      data: options.breakLoop.performAction(action),
     }
   })
 
@@ -72,25 +85,45 @@ export function registerAppIpc(breakLoop: BreakLoopController): void {
 
     return {
       success: true,
-      data: breakLoop.updateEnvironment(update),
+      data: options.breakLoop.updateEnvironment(update),
     }
   })
 
-  breakLoop.subscribe((snapshot) => {
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) {
-        window.webContents.send('break:state-changed', snapshot)
-      }
-    }
+  const unsubscribeBreak = options.breakLoop.subscribe((snapshot) => {
+    broadcast('break:state-changed', snapshot)
   })
+
+  const unsubscribeSettings = options.settings.subscribe((snapshot) => {
+    broadcast('settings:changed', snapshot)
+  })
+
+  return () => {
+    unsubscribeBreak()
+    unsubscribeSettings()
+    ipcMain.removeHandler('app:get-runtime-info')
+    ipcMain.removeHandler('break:get-state')
+    ipcMain.removeHandler('settings:get')
+    ipcMain.removeHandler('settings:update')
+    ipcMain.removeHandler('break:perform-action')
+    ipcMain.removeHandler('break:set-environment')
+  }
 }
 
-function validateSettingsUpdate(update: BreakSettingsUpdate): string | null {
+function broadcast(channel: string, payload: BreakLoopSnapshot | HorizonSettingsSnapshot): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(channel, payload)
+    }
+  }
+}
+
+function validateSettingsUpdate(update: HorizonSettingsUpdate): string | null {
   for (const [key, value] of Object.entries(update)) {
-    if (key === 'remindersEnabled') {
+    if (key === 'remindersEnabled' || key === 'launchAtLogin') {
       if (typeof value !== 'boolean') {
-        return 'remindersEnabled must be a boolean.'
+        return `${key} must be a boolean.`
       }
+
       continue
     }
 

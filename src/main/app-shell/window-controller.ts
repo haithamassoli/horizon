@@ -43,11 +43,26 @@ export interface WindowController {
   getOverlayWindow: () => BrowserWindow
   getSettingsWindow: () => BrowserWindow
   showSettingsWindow: () => void
+  showOverlayWindow: () => void
+  hideOverlayWindow: () => void
+  dispose: () => void
 }
 
 export function createWindowController(): WindowController {
   let settingsWindow: BrowserWindow | null = null
   let overlayWindow: BrowserWindow | null = null
+  let isQuitting = false
+
+  const hideOnClose = (window: BrowserWindow): void => {
+    window.on('close', (event) => {
+      if (isQuitting) {
+        return
+      }
+
+      event.preventDefault()
+      window.hide()
+    })
+  }
 
   return {
     getSettingsWindow() {
@@ -56,6 +71,8 @@ export function createWindowController(): WindowController {
       }
 
       settingsWindow = createSettingsWindow()
+      settingsWindow.removeMenu()
+      hideOnClose(settingsWindow)
       settingsWindow.on('closed', () => {
         settingsWindow = null
       })
@@ -67,6 +84,8 @@ export function createWindowController(): WindowController {
       }
 
       overlayWindow = createOverlayWindow()
+      overlayWindow.removeMenu()
+      hideOnClose(overlayWindow)
       overlayWindow.on('closed', () => {
         overlayWindow = null
       })
@@ -79,6 +98,39 @@ export function createWindowController(): WindowController {
       }
       window.show()
       window.focus()
+    },
+    showOverlayWindow() {
+      const window = this.getOverlayWindow()
+
+      if (!window.isVisible()) {
+        window.center()
+        window.moveTop()
+        window.showInactive()
+        return
+      }
+
+      window.moveTop()
+    },
+    hideOverlayWindow() {
+      const window = this.getOverlayWindow()
+
+      if (window.isVisible()) {
+        window.hide()
+      }
+    },
+    dispose() {
+      isQuitting = true
+
+      if (settingsWindow && !settingsWindow.isDestroyed()) {
+        settingsWindow.destroy()
+      }
+
+      if (overlayWindow && !overlayWindow.isDestroyed()) {
+        overlayWindow.destroy()
+      }
+
+      settingsWindow = null
+      overlayWindow = null
     },
   }
 }
