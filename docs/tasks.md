@@ -38,17 +38,17 @@ Expected outcome:
 
 Tasks:
 
-- [ ] Define the Break Loop state model and event model
-- [ ] Implement active-time accumulation based on normalized Presence input
-- [ ] Implement due-time calculation for the default 20-20-20 schedule
-- [ ] Add configurable break interval and break duration support
-- [ ] Implement pause and resume behavior for inactive states
-- [ ] Implement break due, on-break, completed, and reset transitions
-- [ ] Implement snooze behavior with configurable snooze duration
-- [ ] Implement skip behavior and correct timer recovery after skip
-- [ ] Implement auto-credit logic for meaningful idle near due time
-- [ ] Expose derived Break Loop state for tray, settings, and overlay consumers
-- [ ] Add unit tests for core Break Loop scenarios and edge cases
+- [x] Define the Break Loop state model and event model
+- [x] Implement active-time accumulation based on normalized Presence input
+- [x] Implement due-time calculation for the default 20-20-20 schedule
+- [x] Add configurable break interval and break duration support
+- [x] Implement pause and resume behavior for inactive states
+- [x] Implement break due, on-break, completed, and reset transitions
+- [x] Implement snooze behavior with configurable snooze duration
+- [x] Implement skip behavior and correct timer recovery after skip
+- [x] Implement auto-credit logic for meaningful idle near due time
+- [x] Expose derived Break Loop state for tray, settings, and overlay consumers
+- [x] Add unit tests for core Break Loop scenarios and edge cases
 
 ## Milestone 3: Presence and Suppression Intelligence
 

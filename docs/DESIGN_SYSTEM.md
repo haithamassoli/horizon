@@ -35,6 +35,22 @@ The renderer now defines its theme in `src/renderer/styles.css` with Tailwind v4
 - `control-button-*`: primary, secondary, and ghost button treatments
 - `break-orbit`: circular recovery frame for the break overlay countdown
 
+## Shared React UI layer
+
+The renderer now exposes Horizon-specific primitives from `src/renderer/shared/ui/`:
+
+- `AppShell`: atmospheric page wrapper with ambient orbs
+- `Panel`: primary and soft glass surfaces
+- `Kicker`: compact capsule label
+- `SectionHeader`: shared heading, kicker, and optional description layout
+- `MetricCard`: stat, principle, and note card primitive
+- `Button`: primary, secondary, and ghost action treatments
+- `ToneSwatch`: palette presentation block
+- `StatusBanner`: lightweight warning message surface
+- `BreakOrbit`: orbital countdown container for break moments
+
+These are intentionally product-specific rather than generic. The goal is to preserve a distinct Horizon voice while avoiding duplicated class clusters across windows.
+
 ## Usage guidance
 
 - Favor calm contrast over bright saturation.

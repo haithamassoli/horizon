@@ -1,21 +1,30 @@
-import { useEffect, useState } from 'react'
+import { startTransition, useDeferredValue, useEffect, useEffectEvent, useState } from 'react'
+import {
+  AppShell,
+  Button,
+  Kicker,
+  MetricCard,
+  Panel,
+  SectionHeader,
+  StatusBanner,
+  ToneSwatch,
+} from '@renderer/shared/ui'
 import type { RuntimeInfo } from '@shared/contracts/app'
+import type {
+  BreakActionType,
+  BreakLoopSnapshot,
+  BreakSettingsUpdate,
+  PresenceKind,
+  PresenceState,
+} from '@shared/contracts/break'
 import type { Result } from '@shared/contracts/result'
 import '../styles.css'
 
-const experiencePillars = [
-  {
-    title: 'Break Loop',
-    body: 'Active time drives reminders, while pause, snooze, and auto-credit keep the cadence feeling intentional instead of mechanical.',
-  },
-  {
-    title: 'Presence',
-    body: 'Idle, lock, and wake signals should quietly steer the experience so the app feels observant without becoming invasive.',
-  },
-  {
-    title: 'Suppression',
-    body: 'Fullscreen and presentation states are treated as moments where trust matters more than adherence, so Horizon stays quiet.',
-  },
+const presenceModes: Array<{ kind: PresenceKind; label: string; note: string }> = [
+  { kind: 'active', label: 'Active', note: 'Accumulate active time toward next break.' },
+  { kind: 'idle', label: 'Idle', note: 'Pause timer and allow near-due auto-credit.' },
+  { kind: 'locked', label: 'Locked', note: 'Pause loop while workstation stays unavailable.' },
+  { kind: 'sleeping', label: 'Sleeping', note: 'Model system sleep and wake recovery.' },
 ]
 
 const toneSwatches = [
@@ -26,198 +35,475 @@ const toneSwatches = [
   },
   {
     name: 'Aurora Blue',
-    accent: 'Primary action',
+    accent: 'Active cadence',
     className: 'bg-aurora-400/20 text-aurora-300',
   },
   {
     name: 'Quiet Violet',
-    accent: 'Ambient depth',
+    accent: 'Suppression guard',
     className: 'bg-violet-500/18 text-violet-400',
   },
   {
     name: 'Recovery Mint',
-    accent: 'Success and relief',
+    accent: 'Break completion',
     className: 'bg-mint-400/18 text-mint-300',
   },
 ]
 
-const surfaceNotes = [
-  'Rounded glass panels for settings, overlays, and lightweight stats.',
-  'Serif display type paired with system sans text for calm, premium contrast.',
-  'Soft orbits, fine grid texture, and low-noise gradients to imply focus without urgency.',
-]
+type DraftSettings = {
+  intervalMinutes: string
+  breakSeconds: string
+  snoozeMinutes: string
+  remindersEnabled: boolean
+}
 
-function RuntimeCard({ label, value }: { label: string; value: string }) {
-  return (
-    <article className="metric-card">
-      <div className="metric-label">{label}</div>
-      <div className="metric-value">{value}</div>
-      <p className="metric-note">Securely exposed from the main process through the typed preload bridge.</p>
-    </article>
-  )
+const emptyDraftSettings: DraftSettings = {
+  intervalMinutes: '20',
+  breakSeconds: '20',
+  snoozeMinutes: '2',
+  remindersEnabled: true,
 }
 
 export default function SettingsApp() {
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null)
+  const [breakState, setBreakState] = useState<BreakLoopSnapshot | null>(null)
+  const [draftSettings, setDraftSettings] = useState<DraftSettings>(emptyDraftSettings)
   const [error, setError] = useState<string | null>(null)
+  const loopState = useDeferredValue(breakState)
+
+  const applyBreakState = useEffectEvent((snapshot: BreakLoopSnapshot) => {
+    startTransition(() => {
+      setBreakState(snapshot)
+    })
+  })
 
   useEffect(() => {
     let cancelled = false
 
-    function loadRuntimeInfo(): void {
-      void window.horizon.getRuntimeInfo().then((result: Result<RuntimeInfo>) => {
-        if (cancelled) {
-          return
-        }
+    async function loadData(): Promise<void> {
+      const [runtimeResult, breakResult] = await Promise.all([
+        window.horizon.getRuntimeInfo(),
+        window.horizon.getBreakState(),
+      ])
 
-        if (result.success) {
-          setRuntimeInfo(result.data)
-          return
-        }
+      if (cancelled) {
+        return
+      }
 
-        setError(result.error)
-      })
+      if (runtimeResult.success) {
+        setRuntimeInfo(runtimeResult.data)
+      } else {
+        setError(runtimeResult.error)
+      }
+
+      if (breakResult.success) {
+        applyBreakState(breakResult.data)
+      } else {
+        setError(breakResult.error)
+      }
     }
 
-    loadRuntimeInfo()
+    void loadData()
+
+    const unsubscribe = window.horizon.subscribeBreakState((snapshot) => {
+      if (!cancelled) {
+        applyBreakState(snapshot)
+      }
+    })
 
     return () => {
       cancelled = true
+      unsubscribe()
     }
   }, [])
 
-  return (
-    <main className="app-shell">
-      <div className="ambient-orb ambient-orb-left" />
-      <div className="ambient-orb ambient-orb-right" />
+  useEffect(() => {
+    if (!breakState) {
+      return
+    }
 
+    setDraftSettings({
+      intervalMinutes: String(Math.round(breakState.settings.intervalMs / 60000)),
+      breakSeconds: String(Math.round(breakState.settings.breakDurationMs / 1000)),
+      snoozeMinutes: String(Math.round(breakState.settings.snoozeDurationMs / 60000)),
+      remindersEnabled: breakState.settings.remindersEnabled,
+    })
+  }, [
+    breakState?.settings.breakDurationMs,
+    breakState?.settings.intervalMs,
+    breakState?.settings.remindersEnabled,
+    breakState?.settings.snoozeDurationMs,
+  ])
+
+  async function runBreakAction(action: BreakActionType): Promise<void> {
+    const result = await window.horizon.performBreakAction(action)
+    handleStateResult(result)
+  }
+
+  async function applySettings(): Promise<void> {
+    const intervalMinutes = Number(draftSettings.intervalMinutes)
+    const breakSeconds = Number(draftSettings.breakSeconds)
+    const snoozeMinutes = Number(draftSettings.snoozeMinutes)
+
+    if (intervalMinutes <= 0 || breakSeconds <= 0 || snoozeMinutes <= 0) {
+      setError('Interval, break duration, and snooze duration must be positive values.')
+      return
+    }
+
+    const result = await window.horizon.updateBreakSettings({
+      remindersEnabled: draftSettings.remindersEnabled,
+      intervalMs: Math.round(intervalMinutes * 60000),
+      breakDurationMs: Math.round(breakSeconds * 1000),
+      snoozeDurationMs: Math.round(snoozeMinutes * 60000),
+    })
+
+    handleStateResult(result)
+  }
+
+  async function updatePresence(kind: PresenceKind): Promise<void> {
+    const result = await window.horizon.setBreakEnvironment({
+      presence: { kind, idleMs: 0 },
+    })
+
+    handleStateResult(result)
+  }
+
+  async function updateSuppression(isSuppressed: boolean): Promise<void> {
+    const result = await window.horizon.setBreakEnvironment({ isSuppressed })
+    handleStateResult(result)
+  }
+
+  function handleStateResult(result: Result<BreakLoopSnapshot>): void {
+    if (result.success) {
+      setError(null)
+      applyBreakState(result.data)
+      return
+    }
+
+    setError(result.error)
+  }
+
+  const statusCopy = getStatusCopy(loopState)
+  const presenceLabel = loopState ? titleCase(loopState.presence.kind) : 'Loading'
+
+  return (
+    <AppShell>
       <section className="app-container">
-        <div className="grid gap-6 lg:grid-cols-[1.45fr_0.95fr]">
-          <section className="horizon-panel px-6 py-7 sm:px-8 sm:py-9">
-            <span className="hero-kicker">Calm desktop companion</span>
+        <div className="grid gap-6 lg:grid-cols-[1.35fr_0.95fr]">
+          <Panel className="px-6 py-7 sm:px-8 sm:py-9">
+            <Kicker>Milestone 2 live</Kicker>
 
             <div className="mt-6 grid gap-5">
               <div>
-                <p className="section-kicker">Tailwind v4 theme</p>
+                <p className="section-kicker">Core Break Loop engine</p>
                 <h1 className="mt-3 max-w-3xl text-5xl leading-none text-mist-50 sm:text-6xl lg:text-7xl font-display">
-                  Horizon makes healthy screen breaks feel quiet, precise, and premium.
+                  Horizon now runs active-time scheduling in main process, not mock copy.
                 </h1>
               </div>
 
               <p className="hero-copy">
-                The interface direction turns the PRD into a nocturnal observatory system: soft glass
-                surfaces, serif-led hierarchy, and cool recovery tones that support trust over pressure.
+                {statusCopy.body} Presence, suppression, snooze, skip, completion, reset, and
+                auto-credit all resolve inside one loop so tray, settings, and overlay stay in sync.
               </p>
 
-              <div className="flex flex-wrap gap-3">
-                <button className="control-button control-button-primary" type="button">
-                  Start break walkthrough
-                </button>
-                <button className="control-button control-button-secondary" type="button">
-                  Review settings surfaces
-                </button>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <MetricCard
+                  label="Loop status"
+                  note="Derived from active time, current presence, suppression, and break actions."
+                  value={statusCopy.title}
+                />
+                <MetricCard
+                  label="Next moment"
+                  note="Wall-clock projection when loop is advancing or currently due."
+                  value={formatNextMoment(loopState)}
+                />
+                <MetricCard
+                  label="Completed today"
+                  note="Counts finished or auto-credited cycles from this runtime session."
+                  value={String(loopState?.completedBreaks ?? 0)}
+                />
               </div>
-            </div>
-          </section>
 
-          <aside className="horizon-panel-soft px-6 py-7 sm:px-7 sm:py-8">
-            <div className="section-heading">
-              <div>
-                <p className="section-kicker">Experience principles</p>
-                <h2 className="section-title">Quiet intelligence</h2>
+              <div className="flex flex-wrap gap-3">
+                <Button onClick={() => void runBreakAction('start-now')}>Start break now</Button>
+                <Button onClick={() => void runBreakAction('snooze')} tone="secondary">
+                  Snooze
+                </Button>
+                <Button onClick={() => void runBreakAction('skip')} tone="secondary">
+                  Skip
+                </Button>
+                <Button onClick={() => void runBreakAction('reset')} tone="ghost">
+                  Reset cycle
+                </Button>
               </div>
-              <span className="hero-kicker">20-20-20</span>
             </div>
+          </Panel>
+
+          <Panel as="aside" className="px-6 py-7 sm:px-7 sm:py-8" tone="soft">
+            <SectionHeader aside={<Kicker>20-20-20</Kicker>} kicker="Current loop" title="Cadence controls" />
 
             <div className="mt-6 grid gap-4">
-              {experiencePillars.map((pillar) => (
-                <article className="metric-card" key={pillar.title}>
-                  <h3 className="text-base font-semibold text-mist-50">{pillar.title}</h3>
-                  <p className="metric-note">{pillar.body}</p>
-                </article>
-              ))}
+              <label className="grid gap-2 text-sm text-mist-300">
+                Interval minutes
+                <input
+                  className="rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-mist-50 outline-none transition focus:border-aurora-300/30"
+                  inputMode="numeric"
+                  onChange={(event) => {
+                    setDraftSettings((current) => ({ ...current, intervalMinutes: event.target.value }))
+                  }}
+                  value={draftSettings.intervalMinutes}
+                />
+              </label>
+
+              <label className="grid gap-2 text-sm text-mist-300">
+                Break seconds
+                <input
+                  className="rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-mist-50 outline-none transition focus:border-mint-300/30"
+                  inputMode="numeric"
+                  onChange={(event) => {
+                    setDraftSettings((current) => ({ ...current, breakSeconds: event.target.value }))
+                  }}
+                  value={draftSettings.breakSeconds}
+                />
+              </label>
+
+              <label className="grid gap-2 text-sm text-mist-300">
+                Snooze minutes
+                <input
+                  className="rounded-2xl border border-white/10 bg-white/[0.045] px-4 py-3 text-mist-50 outline-none transition focus:border-violet-400/30"
+                  inputMode="numeric"
+                  onChange={(event) => {
+                    setDraftSettings((current) => ({ ...current, snoozeMinutes: event.target.value }))
+                  }}
+                  value={draftSettings.snoozeMinutes}
+                />
+              </label>
+
+              <label className="flex items-center justify-between gap-4 rounded-[1.5rem] border border-white/8 bg-white/[0.035] px-4 py-3 text-sm text-mist-200">
+                Reminders enabled
+                <button
+                  className={draftSettings.remindersEnabled ? 'text-mint-300' : 'text-mist-300'}
+                  onClick={() => {
+                    setDraftSettings((current) => ({
+                      ...current,
+                      remindersEnabled: !current.remindersEnabled,
+                    }))
+                  }}
+                  type="button"
+                >
+                  {draftSettings.remindersEnabled ? 'On' : 'Off'}
+                </button>
+              </label>
+
+              <Button onClick={() => void applySettings()} className="w-full">
+                Apply loop settings
+              </Button>
             </div>
-          </aside>
+          </Panel>
         </div>
 
-        {error ? <div className="status-banner status-banner-warning">IPC error: {error}</div> : null}
+        {error ? <StatusBanner>IPC error: {error}</StatusBanner> : null}
 
         <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
           <div className="grid gap-6">
-            <section className="horizon-panel px-6 py-7 sm:px-8 sm:py-8">
-              <div className="section-heading">
-                <div>
-                  <p className="section-kicker">System snapshot</p>
-                  <h2 className="section-title">Renderer foundation</h2>
-                </div>
-                <p className="section-copy">
-                  These values verify the multi-process contract while the visual system establishes the
-                  product’s long-term UI language.
-                </p>
-              </div>
+            <Panel className="px-6 py-7 sm:px-8 sm:py-8">
+              <SectionHeader
+                description="Main-process loop state now flows into renderer through typed IPC subscriptions."
+                kicker="Runtime snapshot"
+                title="Single source of truth"
+              />
 
               <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                <RuntimeCard label="App" value={runtimeInfo?.appName ?? 'Loading'} />
-                <RuntimeCard label="Version" value={runtimeInfo?.appVersion ?? 'Loading'} />
-                <RuntimeCard label="Platform" value={runtimeInfo?.platform ?? 'Loading'} />
-                <RuntimeCard label="Electron" value={runtimeInfo?.electronVersion ?? 'Loading'} />
-                <RuntimeCard label="Chrome" value={runtimeInfo?.chromeVersion ?? 'Loading'} />
-                <RuntimeCard label="Node" value={runtimeInfo?.nodeVersion ?? 'Loading'} />
+                <MetricCard label="Presence" note="Normalized Presence input." value={presenceLabel} />
+                <MetricCard
+                  label="Idle time"
+                  note="Derived from current inactive duration."
+                  value={formatDuration(loopState?.presence.idleMs ?? 0)}
+                />
+                <MetricCard
+                  label="Suppression"
+                  note="Fullscreen or presentation guardrail input."
+                  value={loopState?.isSuppressed ? 'Active' : 'Clear'}
+                />
+                <MetricCard
+                  label="Active progress"
+                  note="Active-time accumulation toward next due break."
+                  value={formatProgress(loopState)}
+                />
+                <MetricCard
+                  label="Break timer"
+                  note="Remaining break countdown while on-break."
+                  value={formatDuration(loopState?.breakRemainingMs ?? 0)}
+                />
+                <MetricCard
+                  label="Last outcome"
+                  note="Last reset reason emitted by loop engine."
+                  value={formatOutcome(loopState?.lastOutcome)}
+                />
+                <MetricCard label="App" note="Main process runtime metadata." value={runtimeInfo?.appName ?? 'Loading'} />
+                <MetricCard
+                  label="Electron"
+                  note="Securely exposed through preload bridge."
+                  value={runtimeInfo?.electronVersion ?? 'Loading'}
+                />
+                <MetricCard
+                  label="Platform"
+                  note="Runtime target for current desktop shell."
+                  value={runtimeInfo?.platform ?? 'Loading'}
+                />
               </div>
-            </section>
+            </Panel>
 
-            <section className="horizon-panel-soft px-6 py-7 sm:px-8 sm:py-8">
-              <div className="section-heading">
-                <div>
-                  <p className="section-kicker">Design system primitives</p>
-                  <h2 className="section-title">Theme palette and surfaces</h2>
-                </div>
-              </div>
+            <Panel className="px-6 py-7 sm:px-8 sm:py-8" tone="soft">
+              <SectionHeader kicker="Design system primitives" title="Loop semantics in Horizon palette" />
 
               <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {toneSwatches.map((tone) => (
-                  <article className={`tone-swatch ${tone.className}`} key={tone.name}>
-                    <span className="tone-chip">{tone.accent}</span>
-                    <div>
-                      <p className="text-sm text-current/80">{tone.accent}</p>
-                      <h3 className="mt-1 text-lg font-semibold text-current">{tone.name}</h3>
-                    </div>
-                  </article>
+                  <ToneSwatch accent={tone.accent} className={tone.className} key={tone.name} name={tone.name} />
                 ))}
               </div>
-            </section>
+            </Panel>
           </div>
 
-          <section className="horizon-panel px-6 py-7 sm:px-8 sm:py-8">
-            <div className="section-heading">
-              <div>
-                <p className="section-kicker">Interaction rules</p>
-                <h2 className="section-title">What ships across surfaces</h2>
+          <div className="grid gap-6">
+            <Panel className="px-6 py-7 sm:px-8 sm:py-8">
+              <SectionHeader kicker="Environment simulation" title="Presence and suppression debug" />
+
+              <div className="mt-6 grid gap-4">
+                {presenceModes.map((mode) => (
+                  <button
+                    className={
+                      loopState?.presence.kind === mode.kind
+                        ? 'metric-card border-aurora-300/18 bg-aurora-300/10 text-left'
+                        : 'metric-card text-left'
+                    }
+                    key={mode.kind}
+                    onClick={() => void updatePresence(mode.kind)}
+                    type="button"
+                  >
+                    <div className="metric-label">{mode.label}</div>
+                    <p className="mt-3 text-base font-semibold text-mist-50">{mode.note}</p>
+                  </button>
+                ))}
               </div>
-            </div>
 
-            <div className="mt-6 grid gap-4">
-              {surfaceNotes.map((note) => (
-                <article className="metric-card" key={note}>
-                  <p className="metric-note mt-0">{note}</p>
-                </article>
-              ))}
-            </div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button
+                  onClick={() => void updateSuppression(!(loopState?.isSuppressed ?? false))}
+                  tone="secondary"
+                >
+                  {loopState?.isSuppressed ? 'Disable suppression' : 'Enable suppression'}
+                </Button>
+              </div>
+            </Panel>
 
-            <div className="mt-6 flex flex-wrap gap-3">
-              <button className="control-button control-button-secondary" type="button">
-                Minimal motion
-              </button>
-              <button className="control-button control-button-secondary" type="button">
-                Local-first privacy
-              </button>
-              <button className="control-button control-button-ghost" type="button">
-                Menubar-first shell
-              </button>
-            </div>
-          </section>
+            <Panel className="px-6 py-7 sm:px-8 sm:py-8">
+              <SectionHeader kicker="Behavior notes" title="What milestone 2 now covers" />
+
+              <div className="mt-6 grid gap-4">
+                <MetricCard note="Active time accumulates only while Presence is active, then pauses cleanly during idle, lock, and sleep states." />
+                <MetricCard note="Near-due idle for at least break duration auto-credits a break instead of forcing a prompt." />
+                <MetricCard note="Snooze, skip, complete, and reset all recover through same main-process transition model." />
+              </div>
+            </Panel>
+          </div>
         </section>
       </section>
-    </main>
+    </AppShell>
   )
+}
+
+function getStatusCopy(snapshot: BreakLoopSnapshot | null): { title: string; body: string } {
+  if (!snapshot) {
+    return {
+      title: 'Loading',
+      body: 'Renderer is waiting for main-process loop state.',
+    }
+  }
+
+  switch (snapshot.status) {
+    case 'running':
+      return {
+        title: 'Running',
+        body: 'Active input is flowing, timer is advancing, and next break is projected from real accumulated work time.',
+      }
+    case 'paused':
+      return {
+        title: 'Paused',
+        body: 'Loop is intentionally still because reminders are disabled or Presence is currently away, locked, or sleeping.',
+      }
+    case 'due':
+      return {
+        title: 'Due now',
+        body: 'Break is ready and overlay may surface because interval target has been reached without suppression.',
+      }
+    case 'snoozed':
+      return {
+        title: 'Snoozed',
+        body: 'Loop is holding break prompt for short recovery delay while keeping cycle state intact.',
+      }
+    case 'suppressed':
+      return {
+        title: 'Suppressed',
+        body: 'Break is due, but interruption is blocked until suppression clears so trust wins over rigidity.',
+      }
+    case 'on-break':
+      return {
+        title: 'On break',
+        body: 'Overlay countdown is active and loop will reset on completion without leaking timing logic into renderer.',
+      }
+  }
+}
+
+function formatDuration(ms: number): string {
+  if (ms <= 0) {
+    return '0s'
+  }
+
+  const totalSeconds = Math.ceil(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  if (minutes === 0) {
+    return `${seconds}s`
+  }
+
+  if (seconds === 0) {
+    return `${minutes}m`
+  }
+
+  return `${minutes}m ${seconds}s`
+}
+
+function formatNextMoment(snapshot: BreakLoopSnapshot | null): string {
+  if (!snapshot?.nextBreakAt) {
+    return 'Paused'
+  }
+
+  const formatter = new Intl.DateTimeFormat(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+
+  return formatter.format(snapshot.nextBreakAt)
+}
+
+function formatProgress(snapshot: BreakLoopSnapshot | null): string {
+  if (!snapshot) {
+    return 'Loading'
+  }
+
+  return `${Math.round(snapshot.activeProgress * 100)}%`
+}
+
+function formatOutcome(outcome: BreakLoopSnapshot['lastOutcome'] | undefined): string {
+  if (!outcome) {
+    return 'None yet'
+  }
+
+  return outcome.replace('-', ' ')
+}
+
+function titleCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1)
 }
