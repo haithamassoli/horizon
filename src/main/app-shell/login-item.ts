@@ -19,10 +19,17 @@ export function createLoginItemController(): LoginItemController {
         return openAtLogin
       }
 
-      app.setLoginItemSettings({
-        openAtLogin: enabled,
-        openAsHidden: enabled,
-      })
+      if (process.platform === 'darwin') {
+        app.setLoginItemSettings({
+          openAtLogin: enabled,
+          openAsHidden: enabled,
+        })
+      } else {
+        app.setLoginItemSettings({
+          openAtLogin: enabled,
+          path: process.execPath,
+        })
+      }
 
       openAtLogin = app.getLoginItemSettings().openAtLogin
       return openAtLogin

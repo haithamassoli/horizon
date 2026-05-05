@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createBreakLoopController } from '../break-loop/break-loop'
 import { createSettingsController } from './settings-controller'
+import { createDefaultSettingsSnapshot } from '@shared/contracts/settings'
 
 describe('createSettingsController', () => {
   it('updates Break Loop settings and launch-at-login together', () => {
@@ -12,6 +13,13 @@ describe('createSettingsController', () => {
         getState: () => false,
         setEnabled,
       },
+      storage: {
+        loadSettings: () => createDefaultSettingsSnapshot(),
+        saveSettings: vi.fn(),
+        loadStats: vi.fn(),
+        saveStats: vi.fn(),
+      },
+      initialSnapshot: createDefaultSettingsSnapshot(),
       clock: () => 123,
     })
 

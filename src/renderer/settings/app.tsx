@@ -4,6 +4,7 @@ import type { RuntimeInfo } from '@shared/contracts/app'
 import type { BreakActionType, BreakLoopSnapshot } from '@shared/contracts/break'
 import type { Result } from '@shared/contracts/result'
 import type { HorizonSettingsSnapshot } from '@shared/contracts/settings'
+import type { HorizonStatsSnapshot } from '@shared/contracts/stats'
 import '../styles.css'
 
 type DraftSettings = {
@@ -37,6 +38,7 @@ export default function SettingsApp() {
   const [runtimeInfo, setRuntimeInfo] = useState<RuntimeInfo | null>(null)
   const [breakState, setBreakState] = useState<BreakLoopSnapshot | null>(null)
   const [settingsSnapshot, setSettingsSnapshot] = useState<HorizonSettingsSnapshot | null>(null)
+  const [statsSnapshot, setStatsSnapshot] = useState<HorizonStatsSnapshot | null>(null)
   const [draftSettings, setDraftSettings] = useState<DraftSettings>(emptyDraftSettings)
   const [error, setError] = useState<string | null>(null)
   const syncedSettingsKeyRef = useRef('')
@@ -68,6 +70,14 @@ export default function SettingsApp() {
     syncDraftSettings(snapshot)
   }
 
+  const commitStatsSnapshot = (snapshot: HorizonStatsSnapshot): void => {
+    startTransition(() => {
+      setStatsSnapshot(snapshot)
+    })
+
+    setError(null)
+  }
+
   const applyBreakSnapshot = useEffectEvent((snapshot: BreakLoopSnapshot): void => {
     commitBreakSnapshot(snapshot)
   })
@@ -76,14 +86,19 @@ export default function SettingsApp() {
     commitSettingsSnapshot(snapshot)
   })
 
+  const applyStatsSnapshot = useEffectEvent((snapshot: HorizonStatsSnapshot): void => {
+    commitStatsSnapshot(snapshot)
+  })
+
   useEffect(() => {
     let cancelled = false
 
     async function loadData(): Promise<void> {
-      const [runtimeResult, breakResult, settingsResult] = await Promise.all([
+      const [runtimeResult, breakResult, settingsResult, statsResult] = await Promise.all([
         window.horizon.getRuntimeInfo(),
         window.horizon.getBreakState(),
         window.horizon.getSettings(),
+        window.horizon.getStats(),
       ])
 
       if (cancelled) {
@@ -107,6 +122,12 @@ export default function SettingsApp() {
       } else {
         setError(settingsResult.error)
       }
+
+      if (statsResult.success) {
+        applyStatsSnapshot(statsResult.data)
+      } else {
+        setError(statsResult.error)
+      }
     }
 
     void loadData()
@@ -123,10 +144,17 @@ export default function SettingsApp() {
       }
     })
 
+    const unsubscribeStats = window.horizon.subscribeStats((snapshot) => {
+      if (!cancelled) {
+        applyStatsSnapshot(snapshot)
+      }
+    })
+
     return () => {
       cancelled = true
       unsubscribeBreak()
       unsubscribeSettings()
+      unsubscribeStats()
     }
   }, [])
 
@@ -160,7 +188,7 @@ export default function SettingsApp() {
       launchAtLogin: draftSettings.launchAtLogin,
     })
 
-    handleSettingsResult(result, commitSettingsSnapshot, setError)
+    handleResult(result, commitSettingsSnapshot, setError)
   }
 
   const statusCopy = getStatusCopy(loopState)
@@ -170,24 +198,32 @@ export default function SettingsApp() {
       <section className="app-container">
         <div className="grid gap-6 lg:grid-cols-[1.25fr_0.95fr]">
           <Panel className="px-6 py-7 sm:px-8 sm:py-9">
-            <Kicker>Milestone 4 live</Kicker>
+            <Kicker>Milestone 5 live</Kicker>
 
             <div className="mt-6 grid gap-5">
               <div>
                 <p className="section-kicker">App shell and interaction surfaces</p>
                 <h1 className="mt-3 max-w-3xl text-5xl leading-none text-mist-50 sm:text-6xl lg:text-7xl font-display">
-                  Tray-first orchestration now keeps settings, overlay, and break timing on one calm main-process rail.
+                  Milestone 5 keeps settings, daily stats, and quiet restarts on one trusted main-process rail.
                 </h1>
               </div>
 
               <p className="hero-copy">
-                {statusCopy.body} Main process owns tray state, window lifecycle, launch-at-login, and typed IPC. Renderers stay UI-only.
+                {statusCopy.body} Settings and daily stats now persist locally, launch-at-login stays user-controlled, and restart recovery no longer resets the day.
               </p>
 
               <div className="grid gap-4 sm:grid-cols-3">
                 <MetricCard label="Loop status" note="Live Break Loop snapshot from main process." value={statusCopy.title} />
-                <MetricCard label="Next break" note="Shared with tray status and overlay orchestration." value={formatNextMoment(loopState)} />
-                <MetricCard label="Completed today" note="Runtime break completion count." value={String(loopState?.completedBreaks ?? 0)} />
+                <MetricCard
+                  label="Next break"
+                  note="Persisted and shared with tray status after restart."
+                  value={formatNextMoment(statsSnapshot, loopState)}
+                />
+                <MetricCard
+                  label="Completed today"
+                  note="Daily local stat from main-process storage."
+                  value={String(statsSnapshot?.breaksCompletedToday ?? 0)}
+                />
               </div>
 
               <div className="flex flex-wrap gap-3">
@@ -206,11 +242,7 @@ export default function SettingsApp() {
           </Panel>
 
           <Panel as="aside" className="px-6 py-7 sm:px-7 sm:py-8" tone="soft">
-            <SectionHeader
-              aside={<Kicker>Local shell</Kicker>}
-              kicker="Preferences"
-              title="Quiet defaults, explicit control"
-            />
+            <SectionHeader aside={<Kicker>Local shell</Kicker>} kicker="Preferences" title="Quiet defaults, durable control" />
 
             <div className="mt-6 grid gap-4">
               <label className="grid gap-2 text-sm text-mist-300">
@@ -295,27 +327,31 @@ export default function SettingsApp() {
                 <MetricCard label="Presence" note="Normalized system state." value={titleCase(loopState?.presence.kind ?? 'loading')} />
                 <MetricCard label="Suppression" note="Fullscreen or presentation hold." value={loopState?.isSuppressed ? 'Active' : 'Clear'} />
                 <MetricCard label="Progress" note="Shared with tray timing." value={formatProgress(loopState)} />
-                <MetricCard label="Launch at login" note="Electron login item state." value={settingsSnapshot?.launchAtLogin ? 'Enabled' : 'Disabled'} />
+                <MetricCard
+                  label="Launch at login"
+                  note="Persisted preference applied through Electron login-item state."
+                  value={settingsSnapshot?.launchAtLogin ? 'Enabled' : 'Disabled'}
+                />
                 <MetricCard label="Electron" note="Secure preload bridge only." value={runtimeInfo?.electronVersion ?? 'Loading'} />
                 <MetricCard label="Platform" note="Current desktop target." value={runtimeInfo?.platform ?? 'Loading'} />
               </div>
             </Panel>
 
             <Panel className="px-6 py-7 sm:px-8 sm:py-8" tone="soft">
-              <SectionHeader kicker="Window surfaces" title="How Milestone 4 behaves now" />
+              <SectionHeader kicker="Window surfaces" title="How Milestone 5 behaves now" />
 
               <div className="mt-6 grid gap-4 sm:grid-cols-3">
                 <MetricCard
                   label="Tray"
-                  note="Shows status, next break timing, quick actions, reminders toggle, and launch-at-login control."
+                  note="Shows status, persisted next break timing, quick actions, and daily completion count."
                 />
                 <MetricCard
                   label="Settings"
-                  note="Reads and writes typed settings through IPC while staying pure React UI."
+                  note="Reads settings and daily stats through typed IPC while staying pure React UI."
                 />
                 <MetricCard
                   label="Overlay"
-                  note="Window is created once, shown only when due or on-break, then hidden without resetting loop state."
+                  note="Window is created once, shown only when due or on-break, then hidden without resetting persisted cycle progress."
                 />
               </div>
             </Panel>
@@ -323,7 +359,7 @@ export default function SettingsApp() {
 
           <div className="grid gap-6">
             <Panel className="px-6 py-7 sm:px-8 sm:py-8">
-              <SectionHeader kicker="Saved snapshot" title="Current preference payload" />
+              <SectionHeader kicker="Saved snapshot" title="Current preference and stats payload" />
 
               <div className="mt-6 grid gap-4">
                 <MetricCard label="Interval" note="Main-process settings snapshot." value={`${draftSettings.intervalMinutes} min`} />
@@ -331,8 +367,18 @@ export default function SettingsApp() {
                 <MetricCard label="Snooze" note="Delay before due prompt returns." value={`${draftSettings.snoozeMinutes} min`} />
                 <MetricCard
                   label="Updated"
-                  note="Latest settings state seen from IPC subscription."
+                  note="Latest persisted settings state seen from IPC subscription."
                   value={formatUpdatedAt(settingsSnapshot?.updatedAt ?? null)}
+                />
+                <MetricCard
+                  label="Today"
+                  note="Daily rollover key for local stats storage."
+                  value={statsSnapshot?.dayKey ?? 'Loading'}
+                />
+                <MetricCard
+                  label="Daily breaks"
+                  note="Completed breaks tracked across restarts."
+                  value={String(statsSnapshot?.breaksCompletedToday ?? 0)}
                 />
               </div>
             </Panel>
@@ -341,9 +387,9 @@ export default function SettingsApp() {
               <SectionHeader kicker="Behavior notes" title="Why shell stays trustworthy" />
 
               <div className="mt-6 grid gap-4">
-                <MetricCard note="Tray actions mutate the same Break Loop controller used by overlay and settings, so timing never forks between windows." />
-                <MetricCard note="Launch-at-login changes stay inside main process, behind typed IPC, with no raw Electron primitives exposed to renderer." />
-                <MetricCard note="Break overlay stays window-only and can be shown or hidden repeatedly without reinitializing scheduling, presence, or suppression modules." />
+                <MetricCard note="Tray actions mutate same Break Loop controller used by overlay and settings, so timing never forks between windows or restarts." />
+                <MetricCard note="Launch-at-login changes stay inside main process, persist locally, and never expose raw Electron primitives to renderer." />
+                <MetricCard note="Daily stats roll forward in storage, so completed breaks and next break time recover cleanly when app relaunches." />
               </div>
             </Panel>
           </div>
@@ -378,9 +424,9 @@ function ToggleRow({
   )
 }
 
-function handleSettingsResult(
-  result: Result<HorizonSettingsSnapshot>,
-  applySnapshot: (snapshot: HorizonSettingsSnapshot) => void,
+function handleResult<T>(
+  result: Result<T>,
+  applySnapshot: (snapshot: T) => void,
   setError: (error: string | null) => void,
 ): void {
   if (result.success) {
@@ -434,12 +480,16 @@ function getStatusCopy(snapshot: BreakLoopSnapshot | null): { title: string; bod
   }
 }
 
-function formatNextMoment(snapshot: BreakLoopSnapshot | null): string {
-  if (!snapshot?.nextBreakAt) {
-    return snapshot?.status === 'due' ? 'Due now' : 'Paused'
+function formatNextMoment(statsSnapshot: HorizonStatsSnapshot | null, breakSnapshot: BreakLoopSnapshot | null): string {
+  if (breakSnapshot?.status === 'due') {
+    return 'Due now'
   }
 
-  return nextBreakFormatter.format(snapshot.nextBreakAt)
+  if (!statsSnapshot?.nextBreakAt) {
+    return 'Paused'
+  }
+
+  return nextBreakFormatter.format(statsSnapshot.nextBreakAt)
 }
 
 function formatProgress(snapshot: BreakLoopSnapshot | null): string {

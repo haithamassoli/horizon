@@ -9,8 +9,10 @@ import type {
 } from '@shared/contracts/break'
 import type { Result } from '@shared/contracts/result'
 import type { HorizonSettingsSnapshot, HorizonSettingsUpdate } from '@shared/contracts/settings'
+import type { HorizonStatsSnapshot } from '@shared/contracts/stats'
 import type { BreakLoopController } from '../break-loop/break-loop'
 import type { SettingsController } from '../preferences/settings-controller'
+import type { StatsController } from '../preferences/stats-controller'
 
 const breakActions = new Set<BreakActionType>(['start-now', 'snooze', 'skip', 'complete', 'reset'])
 const presenceKinds = new Set<PresenceKind>(['active', 'idle', 'locked', 'sleeping'])
@@ -18,6 +20,7 @@ const presenceKinds = new Set<PresenceKind>(['active', 'idle', 'locked', 'sleepi
 export interface RegisterAppIpcOptions {
   breakLoop: BreakLoopController
   settings: SettingsController
+  stats: StatsController
 }
 
 export function registerAppIpc(options: RegisterAppIpcOptions): () => void {
@@ -46,6 +49,13 @@ export function registerAppIpc(options: RegisterAppIpcOptions): () => void {
     return {
       success: true,
       data: options.settings.getSnapshot(),
+    }
+  })
+
+  ipcMain.handle('stats:get', async (): Promise<Result<HorizonStatsSnapshot>> => {
+    return {
+      success: true,
+      data: options.stats.getSnapshot(),
     }
   })
 
@@ -97,19 +107,25 @@ export function registerAppIpc(options: RegisterAppIpcOptions): () => void {
     broadcast('settings:changed', snapshot)
   })
 
+  const unsubscribeStats = options.stats.subscribe((snapshot) => {
+    broadcast('stats:changed', snapshot)
+  })
+
   return () => {
     unsubscribeBreak()
     unsubscribeSettings()
+    unsubscribeStats()
     ipcMain.removeHandler('app:get-runtime-info')
     ipcMain.removeHandler('break:get-state')
     ipcMain.removeHandler('settings:get')
+    ipcMain.removeHandler('stats:get')
     ipcMain.removeHandler('settings:update')
     ipcMain.removeHandler('break:perform-action')
     ipcMain.removeHandler('break:set-environment')
   }
 }
 
-function broadcast(channel: string, payload: BreakLoopSnapshot | HorizonSettingsSnapshot): void {
+function broadcast(channel: string, payload: BreakLoopSnapshot | HorizonSettingsSnapshot | HorizonStatsSnapshot): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) {
       window.webContents.send(channel, payload)

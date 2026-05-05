@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PresenceState } from '@shared/contracts/break'
+import { createDefaultSettingsSnapshot } from '@shared/contracts/settings'
+import { createEmptyStatsSnapshot } from '@shared/contracts/stats'
 import type { PresenceAdapter, NormalizedPresenceEvent } from '../presence/presence-types'
 import type { SuppressionAdapter, SuppressionState } from '../suppression/suppression-types'
 import { createAppShell } from './create-app-shell'
@@ -55,9 +57,11 @@ describe('createAppShell', () => {
   it('moves Break Loop from paused to running when Presence returns active', () => {
     const presenceAdapter = createFakePresenceAdapter({ kind: 'idle', idleMs: 0 })
     const suppressionAdapter = createFakeSuppressionAdapter()
+    const storage = createFakeStorage()
     const appShell = createAppShell({
       presence: { adapter: presenceAdapter },
       suppression: { adapter: suppressionAdapter },
+      storage,
     })
 
     expect(appShell.breakLoop.getSnapshot().status).toBe('paused')
@@ -101,6 +105,28 @@ function createFakePresenceAdapter(initialState: PresenceState): PresenceAdapter
     dispose() {
       listeners.clear()
     },
+  }
+}
+
+function createFakeStorage() {
+  const now = Date.now()
+
+  return {
+    loadSettings: () => createDefaultSettingsSnapshot({}, now),
+    saveSettings: vi.fn(),
+    loadStats: () => ({
+      snapshot: createEmptyStatsSnapshot('2026-05-05', now),
+      breakLoop: {
+        activeElapsedMs: 0,
+        breakStartedAt: null,
+        breakEndsAt: null,
+        snoozeUntil: null,
+        completedBreaks: 0,
+        lastOutcome: null,
+        lastOutcomeAt: null,
+      },
+    }),
+    saveStats: vi.fn(),
   }
 }
 

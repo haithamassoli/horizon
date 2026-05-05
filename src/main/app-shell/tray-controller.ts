@@ -1,10 +1,12 @@
 import { Menu, Tray, nativeImage } from 'electron'
 import type { BreakActionType, BreakLoopSnapshot } from '@shared/contracts/break'
 import type { HorizonSettingsSnapshot } from '@shared/contracts/settings'
+import type { HorizonStatsSnapshot } from '@shared/contracts/stats'
 
 export interface TrayControllerState {
   breakSnapshot: BreakLoopSnapshot
   settingsSnapshot: HorizonSettingsSnapshot
+  statsSnapshot: HorizonStatsSnapshot
 }
 
 export interface CreateTrayControllerOptions {
@@ -37,7 +39,7 @@ export function createTrayController(options: CreateTrayControllerOptions): Tray
     const compactStatus = formatCompactStatus(state.breakSnapshot)
     const tooltip = [
       `Horizon: ${formatStatus(state.breakSnapshot.status)}`,
-      `Next break: ${formatNextBreakLabel(state.breakSnapshot)}`,
+      `Next break: ${formatNextBreakLabel(state.breakSnapshot, state.statsSnapshot.nextBreakAt)}`,
       `Reminders: ${state.settingsSnapshot.remindersEnabled ? 'On' : 'Off'}`,
     ].join('\n')
 
@@ -50,8 +52,8 @@ export function createTrayController(options: CreateTrayControllerOptions): Tray
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: `Horizon ${compactStatus}`, enabled: false },
-        { label: `Next break: ${formatNextBreakLabel(state.breakSnapshot)}`, enabled: false },
-        { label: `Completed today: ${state.breakSnapshot.completedBreaks}`, enabled: false },
+        { label: `Next break: ${formatNextBreakLabel(state.breakSnapshot, state.statsSnapshot.nextBreakAt)}`, enabled: false },
+        { label: `Completed today: ${state.statsSnapshot.breaksCompletedToday}`, enabled: false },
         { type: 'separator' },
         {
           label: 'Open Settings',
@@ -131,7 +133,7 @@ function formatCompactStatus(snapshot: BreakLoopSnapshot): string {
   }
 }
 
-function formatNextBreakLabel(snapshot: BreakLoopSnapshot): string {
+function formatNextBreakLabel(snapshot: BreakLoopSnapshot, nextBreakAt: number | null): string {
   if (snapshot.status === 'due') {
     return 'Due now'
   }
@@ -140,11 +142,11 @@ function formatNextBreakLabel(snapshot: BreakLoopSnapshot): string {
     return `On break • ${formatClock(snapshot.breakRemainingMs)} left`
   }
 
-  if (!snapshot.nextBreakAt) {
+  if (!nextBreakAt) {
     return 'Paused'
   }
 
-  return nextBreakFormatter.format(snapshot.nextBreakAt)
+  return nextBreakFormatter.format(nextBreakAt)
 }
 
 function formatStatus(status: BreakLoopSnapshot['status']): string {

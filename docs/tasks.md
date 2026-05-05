@@ -113,15 +113,15 @@ Expected outcome:
 
 Tasks:
 
-- [ ] Define the Settings schema and default values
-- [ ] Define the Stats schema for daily local usage tracking
-- [ ] Implement the local storage adapter for Settings and Stats
-- [ ] Add validation and migration support for persisted data
-- [ ] Persist reminder enablement, break interval, duration, snooze, and launch-at-login preferences
-- [ ] Implement launch-at-login behavior for macOS and Windows
-- [ ] Expose minimal Stats to the settings window and tray or menubar UI
-- [ ] Track breaks completed today and next break time
-- [ ] Ensure app state restores correctly across app restarts
+- [x] Define the Settings schema and default values
+- [x] Define the Stats schema for daily local usage tracking
+- [x] Implement the local storage adapter for Settings and Stats
+- [x] Add validation and migration support for persisted data
+- [x] Persist reminder enablement, break interval, duration, snooze, and launch-at-login preferences
+- [x] Implement launch-at-login behavior for macOS and Windows
+- [x] Expose minimal Stats to the settings window and tray or menubar UI
+- [x] Track breaks completed today and next break time
+- [x] Ensure app state restores correctly across app restarts
 - [ ] Verify the background experience remains quiet and low-friction during normal use
 
 ## Milestone 6: Cross-Platform Hardening and Quality

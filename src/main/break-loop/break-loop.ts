@@ -14,6 +14,7 @@ import type { BreakLoopEvent, BreakLoopState } from './break-loop-types'
 
 export interface BreakLoopController {
   getSnapshot: () => BreakLoopSnapshot
+  getPersistenceState: () => PersistedBreakLoopState
   performAction: (action: BreakActionType) => BreakLoopSnapshot
   updateEnvironment: (update: BreakEnvironmentUpdate) => BreakLoopSnapshot
   updateSettings: (update: BreakSettingsUpdate) => BreakLoopSnapshot
@@ -21,11 +22,22 @@ export interface BreakLoopController {
   dispose: () => void
 }
 
+export interface PersistedBreakLoopState {
+  activeElapsedMs: number
+  breakStartedAt: number | null
+  breakEndsAt: number | null
+  snoozeUntil: number | null
+  completedBreaks: number
+  lastOutcome: BreakLoopOutcome | null
+  lastOutcomeAt: number | null
+}
+
 export interface CreateBreakLoopStateOptions {
   now?: number
   settings?: Partial<BreakLoopSettings>
   presence?: PresenceState
   isSuppressed?: boolean
+  restoredState?: Partial<PersistedBreakLoopState>
 }
 
 export interface CreateBreakLoopControllerOptions extends CreateBreakLoopStateOptions {
@@ -35,21 +47,24 @@ export interface CreateBreakLoopControllerOptions extends CreateBreakLoopStateOp
 
 export function createBreakLoopState(options: CreateBreakLoopStateOptions = {}): BreakLoopState {
   const now = options.now ?? Date.now()
+  const settings = createDefaultBreakLoopSettings(options.settings)
+  const restoredState = options.restoredState ?? {}
+  const activeElapsedMs = Math.min(Math.max(restoredState.activeElapsedMs ?? 0, 0), settings.intervalMs)
 
-  return {
-    settings: createDefaultBreakLoopSettings(options.settings),
+  return restoreBreakLoopState({
+    settings,
     presence: options.presence ?? createActivePresence(),
     isSuppressed: options.isSuppressed ?? false,
-    activeElapsedMs: 0,
-    breakStartedAt: null,
-    breakEndsAt: null,
-    snoozeUntil: null,
+    activeElapsedMs,
+    breakStartedAt: restoredState.breakStartedAt ?? null,
+    breakEndsAt: restoredState.breakEndsAt ?? null,
+    snoozeUntil: restoredState.snoozeUntil ?? null,
     inactiveSince: null,
-    completedBreaks: 0,
-    lastOutcome: null,
-    lastOutcomeAt: null,
+    completedBreaks: Math.max(restoredState.completedBreaks ?? 0, 0),
+    lastOutcome: restoredState.lastOutcome ?? null,
+    lastOutcomeAt: restoredState.lastOutcomeAt ?? null,
     updatedAt: now,
-  }
+  }, now)
 }
 
 export function reduceBreakLoop(state: BreakLoopState, event: BreakLoopEvent): BreakLoopState {
@@ -137,6 +152,10 @@ export function createBreakLoopController(options: CreateBreakLoopControllerOpti
       state = advanceBreakLoop(state, clock())
       return toBreakLoopSnapshot(state)
     },
+    getPersistenceState() {
+      state = advanceBreakLoop(state, clock())
+      return toPersistedBreakLoopState(state)
+    },
     performAction(action) {
       return dispatch({ type: 'break-action', now: clock(), action })
     },
@@ -175,6 +194,18 @@ export function createBreakLoopController(options: CreateBreakLoopControllerOpti
       clearInterval(interval)
       listeners.clear()
     },
+  }
+}
+
+export function toPersistedBreakLoopState(state: BreakLoopState): PersistedBreakLoopState {
+  return {
+    activeElapsedMs: state.activeElapsedMs,
+    breakStartedAt: state.breakStartedAt,
+    breakEndsAt: state.breakEndsAt,
+    snoozeUntil: state.snoozeUntil,
+    completedBreaks: state.completedBreaks,
+    lastOutcome: state.lastOutcome,
+    lastOutcomeAt: state.lastOutcomeAt,
   }
 }
 
@@ -344,6 +375,24 @@ function reconcileBreakLoopState(state: BreakLoopState): BreakLoopState {
     next = {
       ...next,
       snoozeUntil: null,
+    }
+  }
+
+  return next
+}
+
+function restoreBreakLoopState(state: BreakLoopState, now: number): BreakLoopState {
+  let next = reconcileBreakLoopState(state)
+
+  if (next.breakEndsAt !== null && next.breakEndsAt <= now) {
+    next = resetCycle(next, next.breakEndsAt, 'break-completed', true)
+  }
+
+  if (next.snoozeUntil !== null && next.snoozeUntil <= now) {
+    next = {
+      ...next,
+      snoozeUntil: null,
+      updatedAt: now,
     }
   }
 

@@ -1,6 +1,7 @@
 import type { BreakLoopController } from '../break-loop/break-loop'
 import type { LoginItemController } from '../app-shell/login-item'
 import type { HorizonSettingsSnapshot, HorizonSettingsUpdate } from '@shared/contracts/settings'
+import type { StorageAdapter } from './storage-adapter'
 
 export interface SettingsController {
   getSnapshot: () => HorizonSettingsSnapshot
@@ -12,14 +13,18 @@ export interface SettingsController {
 export interface CreateSettingsControllerOptions {
   breakLoop: BreakLoopController
   loginItem: LoginItemController
+  storage: StorageAdapter
+  initialSnapshot: HorizonSettingsSnapshot
   clock?: () => number
 }
 
 export function createSettingsController(options: CreateSettingsControllerOptions): SettingsController {
   const clock = options.clock ?? Date.now
   const listeners = new Set<(snapshot: HorizonSettingsSnapshot) => void>()
-  let launchAtLogin = options.loginItem.getState()
-  let snapshot = toSettingsSnapshot(options.breakLoop.getSnapshot().settings, launchAtLogin, clock())
+  let launchAtLogin = options.loginItem.setEnabled(options.initialSnapshot.launchAtLogin)
+  let snapshot = toSettingsSnapshot(options.breakLoop.getSnapshot().settings, launchAtLogin, options.initialSnapshot.updatedAt)
+
+  options.storage.saveSettings(snapshot)
 
   const emit = (): HorizonSettingsSnapshot => {
     for (const listener of listeners) {
@@ -46,9 +51,10 @@ export function createSettingsController(options: CreateSettingsControllerOption
       }
 
       const hasBreakUpdate = Object.values(breakUpdate).some((value) => typeof value !== 'undefined')
-      const breakSettings = hasBreakUpdate ? options.breakLoop.updateSettings(breakUpdate).settings : snapshot
+      const breakSettings = hasBreakUpdate ? options.breakLoop.updateSettings(breakUpdate).settings : options.breakLoop.getSnapshot().settings
 
       snapshot = toSettingsSnapshot(breakSettings, launchAtLogin, clock())
+      options.storage.saveSettings(snapshot)
       return emit()
     },
     subscribe(listener) {
