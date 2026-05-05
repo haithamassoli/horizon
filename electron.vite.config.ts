@@ -26,6 +26,9 @@ export default defineConfig({
       sourcemap: process.env.NODE_ENV !== 'production',
       rollupOptions: {
         input: resolve(__dirname, 'src/preload/index.ts'),
+        output: {
+          format: 'cjs',
+        },
       },
     },
     resolve: {

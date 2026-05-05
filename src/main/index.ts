@@ -37,5 +37,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  appShell?.breakLoop.dispose()
+  appShell?.dispose()
 })

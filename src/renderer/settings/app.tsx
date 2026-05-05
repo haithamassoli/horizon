@@ -1,4 +1,4 @@
-import { startTransition, useDeferredValue, useEffect, useEffectEvent, useState } from 'react'
+import { startTransition, useDeferredValue, useEffect, useRef, useState } from 'react'
 import {
   AppShell,
   Button,
@@ -10,22 +10,9 @@ import {
   ToneSwatch,
 } from '@renderer/shared/ui'
 import type { RuntimeInfo } from '@shared/contracts/app'
-import type {
-  BreakActionType,
-  BreakLoopSnapshot,
-  BreakSettingsUpdate,
-  PresenceKind,
-  PresenceState,
-} from '@shared/contracts/break'
+import type { BreakActionType, BreakLoopSnapshot } from '@shared/contracts/break'
 import type { Result } from '@shared/contracts/result'
 import '../styles.css'
-
-const presenceModes: Array<{ kind: PresenceKind; label: string; note: string }> = [
-  { kind: 'active', label: 'Active', note: 'Accumulate active time toward next break.' },
-  { kind: 'idle', label: 'Idle', note: 'Pause timer and allow near-due auto-credit.' },
-  { kind: 'locked', label: 'Locked', note: 'Pause loop while workstation stays unavailable.' },
-  { kind: 'sleeping', label: 'Sleeping', note: 'Model system sleep and wake recovery.' },
-]
 
 const toneSwatches = [
   {
@@ -69,13 +56,36 @@ export default function SettingsApp() {
   const [breakState, setBreakState] = useState<BreakLoopSnapshot | null>(null)
   const [draftSettings, setDraftSettings] = useState<DraftSettings>(emptyDraftSettings)
   const [error, setError] = useState<string | null>(null)
+  const syncedSettingsKeyRef = useRef('')
   const loopState = useDeferredValue(breakState)
 
-  const applyBreakState = useEffectEvent((snapshot: BreakLoopSnapshot) => {
+  const applyBreakState = (snapshot: BreakLoopSnapshot): void => {
     startTransition(() => {
       setBreakState(snapshot)
     })
-  })
+  }
+
+  const syncDraftSettings = (snapshot: BreakLoopSnapshot): void => {
+    const nextKey = getSettingsKey(snapshot)
+
+    if (syncedSettingsKeyRef.current === nextKey) {
+      return
+    }
+
+    syncedSettingsKeyRef.current = nextKey
+    setDraftSettings(toDraftSettings(snapshot))
+  }
+
+  const handleStateResult = (result: Result<BreakLoopSnapshot>): void => {
+    if (result.success) {
+      setError(null)
+      syncDraftSettings(result.data)
+      applyBreakState(result.data)
+      return
+    }
+
+    setError(result.error)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -97,10 +107,13 @@ export default function SettingsApp() {
       }
 
       if (breakResult.success) {
+        setError(null)
+        syncDraftSettings(breakResult.data)
         applyBreakState(breakResult.data)
-      } else {
-        setError(breakResult.error)
+        return
       }
+
+      setError(breakResult.error)
     }
 
     void loadData()
@@ -116,24 +129,6 @@ export default function SettingsApp() {
       unsubscribe()
     }
   }, [])
-
-  useEffect(() => {
-    if (!breakState) {
-      return
-    }
-
-    setDraftSettings({
-      intervalMinutes: String(Math.round(breakState.settings.intervalMs / 60000)),
-      breakSeconds: String(Math.round(breakState.settings.breakDurationMs / 1000)),
-      snoozeMinutes: String(Math.round(breakState.settings.snoozeDurationMs / 60000)),
-      remindersEnabled: breakState.settings.remindersEnabled,
-    })
-  }, [
-    breakState?.settings.breakDurationMs,
-    breakState?.settings.intervalMs,
-    breakState?.settings.remindersEnabled,
-    breakState?.settings.snoozeDurationMs,
-  ])
 
   async function runBreakAction(action: BreakActionType): Promise<void> {
     const result = await window.horizon.performBreakAction(action)
@@ -160,29 +155,6 @@ export default function SettingsApp() {
     handleStateResult(result)
   }
 
-  async function updatePresence(kind: PresenceKind): Promise<void> {
-    const result = await window.horizon.setBreakEnvironment({
-      presence: { kind, idleMs: 0 },
-    })
-
-    handleStateResult(result)
-  }
-
-  async function updateSuppression(isSuppressed: boolean): Promise<void> {
-    const result = await window.horizon.setBreakEnvironment({ isSuppressed })
-    handleStateResult(result)
-  }
-
-  function handleStateResult(result: Result<BreakLoopSnapshot>): void {
-    if (result.success) {
-      setError(null)
-      applyBreakState(result.data)
-      return
-    }
-
-    setError(result.error)
-  }
-
   const statusCopy = getStatusCopy(loopState)
   const presenceLabel = loopState ? titleCase(loopState.presence.kind) : 'Loading'
 
@@ -191,19 +163,18 @@ export default function SettingsApp() {
       <section className="app-container">
         <div className="grid gap-6 lg:grid-cols-[1.35fr_0.95fr]">
           <Panel className="px-6 py-7 sm:px-8 sm:py-9">
-            <Kicker>Milestone 2 live</Kicker>
+            <Kicker>Milestone 3 live</Kicker>
 
             <div className="mt-6 grid gap-5">
               <div>
-                <p className="section-kicker">Core Break Loop engine</p>
+                <p className="section-kicker">Presence and suppression intelligence</p>
                 <h1 className="mt-3 max-w-3xl text-5xl leading-none text-mist-50 sm:text-6xl lg:text-7xl font-display">
-                  Horizon now runs active-time scheduling in main process, not mock copy.
+                  Horizon now reads platform signals before it decides whether interruption is welcome.
                 </h1>
               </div>
 
               <p className="hero-copy">
-                {statusCopy.body} Presence, suppression, snooze, skip, completion, reset, and
-                auto-credit all resolve inside one loop so tray, settings, and overlay stay in sync.
+                {statusCopy.body} Presence adapters normalize idle, lock, sleep, and wake. Suppression adapters guard fullscreen and presentation-like work before overlay can surface.
               </p>
 
               <div className="grid gap-4 sm:grid-cols-3">
@@ -308,7 +279,7 @@ export default function SettingsApp() {
           <div className="grid gap-6">
             <Panel className="px-6 py-7 sm:px-8 sm:py-8">
               <SectionHeader
-                description="Main-process loop state now flows into renderer through typed IPC subscriptions."
+                description="Typed IPC now carries live Break Loop state driven by real platform adapters."
                 kicker="Runtime snapshot"
                 title="Single source of truth"
               />
@@ -367,43 +338,22 @@ export default function SettingsApp() {
 
           <div className="grid gap-6">
             <Panel className="px-6 py-7 sm:px-8 sm:py-8">
-              <SectionHeader kicker="Environment simulation" title="Presence and suppression debug" />
+              <SectionHeader kicker="Platform awareness" title="Adapter-backed interruption guardrails" />
 
               <div className="mt-6 grid gap-4">
-                {presenceModes.map((mode) => (
-                  <button
-                    className={
-                      loopState?.presence.kind === mode.kind
-                        ? 'metric-card border-aurora-300/18 bg-aurora-300/10 text-left'
-                        : 'metric-card text-left'
-                    }
-                    key={mode.kind}
-                    onClick={() => void updatePresence(mode.kind)}
-                    type="button"
-                  >
-                    <div className="metric-label">{mode.label}</div>
-                    <p className="mt-3 text-base font-semibold text-mist-50">{mode.note}</p>
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Button
-                  onClick={() => void updateSuppression(!(loopState?.isSuppressed ?? false))}
-                  tone="secondary"
-                >
-                  {loopState?.isSuppressed ? 'Disable suppression' : 'Enable suppression'}
-                </Button>
+                <MetricCard note="Presence comes from Electron power-monitor signals plus normalized idle polling in main process." />
+                <MetricCard note="Suppression comes from platform-specific fullscreen detection through narrow native bridge commands when Electron alone is not enough." />
+                <MetricCard note="Manual environment forcing stays available through IPC for diagnostics, but normal product behavior now follows live system state." />
               </div>
             </Panel>
 
             <Panel className="px-6 py-7 sm:px-8 sm:py-8">
-              <SectionHeader kicker="Behavior notes" title="What milestone 2 now covers" />
+              <SectionHeader kicker="Behavior notes" title="What milestone 3 now covers" />
 
               <div className="mt-6 grid gap-4">
-                <MetricCard note="Active time accumulates only while Presence is active, then pauses cleanly during idle, lock, and sleep states." />
-                <MetricCard note="Near-due idle for at least break duration auto-credits a break instead of forcing a prompt." />
-                <MetricCard note="Snooze, skip, complete, and reset all recover through same main-process transition model." />
+                <MetricCard note="Idle, lock, sleep, unlock, and wake now enter Break Loop through one normalized Presence seam." />
+                <MetricCard note="Fullscreen or presentation-like work now holds due breaks behind Suppression instead of surfacing mistimed overlays." />
+                <MetricCard note="Near-due idle still auto-credits a break, but only after adapter-normalized system state reaches core loop." />
               </div>
             </Panel>
           </div>
@@ -506,4 +456,22 @@ function formatOutcome(outcome: BreakLoopSnapshot['lastOutcome'] | undefined): s
 
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function toDraftSettings(snapshot: BreakLoopSnapshot): DraftSettings {
+  return {
+    intervalMinutes: String(Math.round(snapshot.settings.intervalMs / 60000)),
+    breakSeconds: String(Math.round(snapshot.settings.breakDurationMs / 1000)),
+    snoozeMinutes: String(Math.round(snapshot.settings.snoozeDurationMs / 60000)),
+    remindersEnabled: snapshot.settings.remindersEnabled,
+  }
+}
+
+function getSettingsKey(snapshot: BreakLoopSnapshot): string {
+  return [
+    snapshot.settings.intervalMs,
+    snapshot.settings.breakDurationMs,
+    snapshot.settings.snoozeDurationMs,
+    snapshot.settings.remindersEnabled,
+  ].join(':')
 }

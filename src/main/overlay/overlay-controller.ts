@@ -1,8 +1,8 @@
-import { BrowserWindow, shell } from 'electron'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { app, BrowserWindow, shell } from 'electron'
+import { join } from 'node:path'
 
-const currentDirectory = dirname(fileURLToPath(import.meta.url))
+const preloadEntry = join(app.getAppPath(), 'dist/preload/index.cjs')
+const rendererDirectory = join(app.getAppPath(), 'dist/renderer')
 
 function loadRendererEntry(window: BrowserWindow, entryFile: string): void {
   if (process.env.ELECTRON_RENDERER_URL) {
@@ -10,7 +10,7 @@ function loadRendererEntry(window: BrowserWindow, entryFile: string): void {
     return
   }
 
-  void window.loadFile(join(currentDirectory, '../../renderer', entryFile))
+  void window.loadFile(join(rendererDirectory, entryFile))
 }
 
 export function createOverlayWindow(): BrowserWindow {
@@ -27,7 +27,7 @@ export function createOverlayWindow(): BrowserWindow {
     alwaysOnTop: true,
     backgroundColor: '#00000000',
     webPreferences: {
-      preload: join(currentDirectory, '../../preload/index.mjs'),
+      preload: preloadEntry,
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,

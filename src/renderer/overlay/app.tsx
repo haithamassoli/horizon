@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useEffectEvent, useState } from 'react'
+import { startTransition, useEffect, useState } from 'react'
 import { AppShell, BreakOrbit, Button, Kicker, MetricCard, Panel, StatusBanner } from '@renderer/shared/ui'
 import type { BreakActionType, BreakLoopSnapshot } from '@shared/contracts/break'
 import type { Result } from '@shared/contracts/result'
@@ -8,11 +8,21 @@ export default function OverlayApp() {
   const [breakState, setBreakState] = useState<BreakLoopSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const applyBreakState = useEffectEvent((snapshot: BreakLoopSnapshot) => {
+  const applyBreakState = (snapshot: BreakLoopSnapshot): void => {
     startTransition(() => {
       setBreakState(snapshot)
     })
-  })
+  }
+
+  const handleStateResult = (result: Result<BreakLoopSnapshot>): void => {
+    if (result.success) {
+      setError(null)
+      applyBreakState(result.data)
+      return
+    }
+
+    setError(result.error)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -24,7 +34,13 @@ export default function OverlayApp() {
         return
       }
 
-      handleStateResult(result)
+      if (result.success) {
+        setError(null)
+        applyBreakState(result.data)
+        return
+      }
+
+      setError(result.error)
     }
 
     void loadState()
@@ -44,16 +60,6 @@ export default function OverlayApp() {
   async function runBreakAction(action: BreakActionType): Promise<void> {
     const result = await window.horizon.performBreakAction(action)
     handleStateResult(result)
-  }
-
-  function handleStateResult(result: Result<BreakLoopSnapshot>): void {
-    if (result.success) {
-      setError(null)
-      applyBreakState(result.data)
-      return
-    }
-
-    setError(result.error)
   }
 
   const countdown = breakState?.status === 'on-break' ? breakState.breakRemainingMs : breakState?.settings.breakDurationMs ?? 20000

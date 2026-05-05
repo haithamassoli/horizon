@@ -63,17 +63,17 @@ Expected outcome:
 
 Tasks:
 
-- [ ] Define the `PresenceAdapter` interface and normalized Presence events
-- [ ] Define the `SuppressionAdapter` interface and normalized Suppression state
-- [ ] Implement the macOS Presence adapter
-- [ ] Implement the Windows Presence adapter
-- [ ] Implement the macOS Suppression adapter for fullscreen or presentation detection
-- [ ] Implement the Windows Suppression adapter for fullscreen or presentation detection
-- [ ] Add native bridge support where Electron APIs are insufficient
-- [ ] Normalize adapter output before it reaches the Break Loop
-- [ ] Handle sleep, wake, lock, unlock, and idle transitions consistently across platforms
-- [ ] Add adapter-level tests or integration checks for platform-specific behavior
-- [ ] Validate that Suppression prevents mistimed overlays while preserving timer correctness
+- [x] Define the `PresenceAdapter` interface and normalized Presence events
+- [x] Define the `SuppressionAdapter` interface and normalized Suppression state
+- [x] Implement the macOS Presence adapter
+- [x] Implement the Windows Presence adapter
+- [x] Implement the macOS Suppression adapter for fullscreen or presentation detection
+- [x] Implement the Windows Suppression adapter for fullscreen or presentation detection
+- [x] Add native bridge support where Electron APIs are insufficient
+- [x] Normalize adapter output before it reaches the Break Loop
+- [x] Handle sleep, wake, lock, unlock, and idle transitions consistently across platforms
+- [x] Add adapter-level tests or integration checks for platform-specific behavior
+- [x] Validate that Suppression prevents mistimed overlays while preserving timer correctness
 
 ## Milestone 4: App Shell and User Interaction Surfaces
 
